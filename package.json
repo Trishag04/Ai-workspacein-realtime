@@ -1,0 +1,12 @@
+{
+  "type": "module",
+  "dependencies": {
+    "@prisma/client": "^6.18.0",
+    "axios": "^1.12.2",
+    "body-parser": "^2.2.0",
+    "crypto": "^1.0.1"
+  },
+  "devDependencies": {
+    "prisma": "^6.18.0"
+  }
+}

@@ -16,11 +16,17 @@ model Employee {
   role      Role
   createdAt DateTime @default(now())
   password  String
-  prs       PR[]
-  tasks     Task[]
+  // existing back-relations
+  prs       PR[]     @relation("employee")
+  tasks     Task[]?
 
+  // NEW: store GitHub login so we can map webhook sender.login -> employee
+  github_login String? @db.Text
+
+  @@map("Employee")
   @@schema("public")
 }
+
 
 model Project {
   id          Int       @id @default(autoincrement())
@@ -51,17 +57,31 @@ model Task {
 }
 
 model PR {
-  id        Int      @id @default(autoincrement())
-  url       String
-  status    String   @default("open")
-  taskId    Int
-  authorId  Int
-  createdAt DateTime @default(now())
-  employee  Employee @relation(fields: [authorId], references: [id])
-  task      Task     @relation(fields: [taskId], references: [id])
+  id                    Int       @id @default(autoincrement())
+  url                   String
+  status                String    @default("open")
+  taskId                Int?      // nullable because tasks are external / created by another service
+  authorId              Int
+  createdAt             DateTime  @default(now())
+  ci_overall            String?   // passing / failing / pending / unknown
+  head_sha              String?
+  pr_html_url           String?
+  last_updated_at       DateTime? @db.Timestamptz
+  linked_by_employee_id Int?      // employee id mapped from webhook sender.login
+  linked_verified       Boolean   @default(false)
+  repo_owner            String?   // store repo owner for the PR if task doesn't provide it
+  repo_name             String?   // store repo name for the PR
 
+  // Relation to Employee (author)
+  employee Employee @relation(fields: [authorId], references: [id])
+
+  // Optional relation for the linked-by employee (nullable)
+  linked_by_employee Employee? @relation("LinkedBy", fields: [linked_by_employee_id], references: [id])
+
+  @@map("PR")
   @@schema("public")
 }
+
 
 model Meeting {
   id         Int          @id @default(autoincrement())

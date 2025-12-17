@@ -7,6 +7,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from 'sonner';
 import api from '../utils/api.js';
+import { supabase } from "@/utils/supabaseClient";
 
 const SignupPage = () => {
   const navigate = useNavigate();
@@ -19,7 +20,8 @@ const SignupPage = () => {
     role: '',
     department: '',
     password: '',
-    confirmPassword: ''
+    confirmPassword: '',
+    githubLogin: ''
   });
 
   const [errors, setErrors] = useState({});
@@ -30,6 +32,7 @@ const SignupPage = () => {
     hasNumber: false,
     hasSpecialChar: false
   });
+  const [loading, setLoading] = useState(false);
 
   // ------------------------ HANDLERS --------------------------
   const handleChange = (e) => {
@@ -59,6 +62,7 @@ const SignupPage = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    setLoading(true);
     const newErrors = {};
 
     if (!formData.name) newErrors.name = 'Full name is required';
@@ -77,31 +81,122 @@ const SignupPage = () => {
 
     if (Object.keys(newErrors).length > 0) {
       setErrors(newErrors);
+      setLoading(false);
       return;
     }
 
     try {
+      //1️⃣ Create user in Supabase Auth
+      const { data: supaData, error: supaError } = await supabase.auth.signUp({
+        email: formData.email,
+        password: formData.password,
+        githubLogin: formData.githubLogin,
+        options: {
+          data: {
+            name: formData.name,
+            role: formData.role,
+            department: formData.department,
+          }
+        }
+      });
+
+      if (supaError) {
+        console.error("Supabase signup error:", supaError);
+        toast.error("Supabase signup failed", { description: supaError.message || String(supaError) });
+        setLoading(false);
+        return;
+      }
+
+      const supaUserId = supaData?.user?.id;
+      if (!supaUserId) {
+        // Something odd: user created but no id returned
+        console.warn("Supabase created user but no id returned", supaData);
+      }
+
+      // 2️⃣ Create user in backend (your API) - backend does NOT accept supabase_user_id per your statement
       const payload = {
         name: formData.name,
         email: formData.email,
-        password: formData.password,
         role: formData.role.toUpperCase(),
-        department: formData.department
+        department: formData.department,
+        password: formData.password,
+    githubLogin: formData.githubLogin
       };
 
       const response = await api.post('/signup', payload);
+      const createdUser = response.data?.user || response.data;
 
-      toast.success('Account created successfully!');
-      console.log('Signup response:', response.data);
+      if (!createdUser) {
+        console.error("Backend signup returned unexpected response", response.data);
+        toast.error("Failed to save user in backend");
+        setLoading(false);
+        return;
+      }
 
+      toast.success("Signup successful! Linking accounts...");
+
+      // 3️⃣ Attempt to update the employee row with supabase_user_id using the Supabase client
+      try {
+        // backend returned created user — try to get numeric id out of it
+        const employeeId = createdUser.id ?? createdUser.employee_id ?? createdUser.emp_id ?? null;
+
+        if (employeeId) {
+          const { data: upData, error: upError } = await supabase
+            .from('employee')
+            .update({ supabase_user_id: supaUserId })
+            .eq('id', employeeId);
+
+          if (upError) {
+            console.warn("Failed to update employee.supabase_user_id (client):", upError);
+            // Not fatal: tell user/admin to map on server
+            toast.error("Account created but failed to link Supabase ID. Ask admin to link accounts.");
+          } else {
+            console.log("Successfully wrote supabase_user_id into employee:", upData);
+          }
+        } else {
+          console.warn("Backend did not return employee id — cannot update supabase_user_id from client.");
+          toast.error("Account created. Ask admin to link your Supabase ID to your employee record.");
+        }
+      } catch (linkErr) {
+        console.error("Error while attempting to update employee supabase_user_id:", linkErr);
+        toast.error("Account created but linking failed. Ask admin to map your Supabase ID.");
+      }
+
+      toast.success("Signup complete — please verify email and login.");
       navigate('/login');
 
-    } catch (error) {
-      console.error('Signup Error:', error);
-      const errorMsg = error.response?.data?.detail || 'Signup failed';
-      toast.error(errorMsg);
+    } catch (err) {
+      console.error("Signup Error:", err);
+      toast.error("Signup failed", {
+        description: err.response?.data?.detail || err.message || "Unexpected server error"
+      });
+    } finally {
+      setLoading(false);
     }
   };
+  //   try {
+  //     const payload = {
+  //       name: formData.name,
+  //       email: formData.email,
+  //       password: formData.password,
+  //       role: formData.role.toUpperCase(),
+  //       department: formData.department,
+  //       githubLogin: formData.githubLogin
+  //     };
+
+  //     const response = await api.post('/signup', payload);
+
+  //     toast.success('Account created successfully!');
+  //     console.log('Signup response:', response.data);
+
+  //     navigate('/login');
+
+  //   } catch (error) {
+  //     console.error('Signup Error:', error);
+  //     const errorMsg = error.response?.data?.detail || 'Signup failed';
+  //     toast.error(errorMsg);
+  //   }
+  // };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 flex items-center justify-center px-6 py-12">
@@ -158,6 +253,20 @@ const SignupPage = () => {
                   />
                 </div>
                 {errors.email && <p className="text-red-500 text-sm">{errors.email}</p>}
+              </div>
+              {/* GitHub Username */}
+              <div className="space-y-2">
+                <Label htmlFor="githubLogin" className="text-slate-200">GitHub Username</Label>
+                <div className="relative">
+                  <Input
+                    id="githubLogin"
+                    name="githubLogin"
+                    placeholder="your-github-username"
+                    value={formData.githubLogin}
+                    onChange={handleChange}
+                    className="pl-10 bg-slate-900/40 border-slate-600 text-white"
+                  />
+                </div>
               </div>
             </div>
 
@@ -306,3 +415,4 @@ const PasswordRule = ({ label, valid }) => (
 );
 
 export default SignupPage;
+

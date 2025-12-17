@@ -1,3 +1,4 @@
+// src/pages/LoginPage.js
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Eye, EyeOff, Mail, Lock } from 'lucide-react';
@@ -6,6 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
 import api from '../utils/api.js';
+import { supabase } from "@/utils/supabaseClient";
 
 const LoginPage = () => {
   const navigate = useNavigate();
@@ -17,6 +19,58 @@ const LoginPage = () => {
   const handleChange = (e) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
     setErrors({ ...errors, [e.target.name]: '' });
+  };
+
+  const tryLinkSupabaseIdToEmployee = async (backendUser, supaUserId) => {
+    // if backend user already has supabase_user_id – nothing to do
+    if (backendUser?.supabase_user_id) return;
+
+    // attempt to update the employee record on Supabase directly (client)
+    try {
+      // try to locate the employee row by backend user id (numeric) or email
+      const employeeId = backendUser?.id;
+      if (employeeId) {
+        const { data, error } = await supabase
+          .from('employee')
+          .update({ supabase_user_id: supaUserId })
+          .eq('id', employeeId);
+
+        if (error) {
+          console.warn("Could not write supabase_user_id to employee by id:", error);
+        } else {
+          console.log("Linked supabase_user_id to employee by id:", data);
+          return;
+        }
+      }
+
+      // fallback: try to find by email and update (if id unknown)
+      if (backendUser?.email) {
+        const { data: found, error: selErr } = await supabase
+          .from('employee')
+          .select('id')
+          .eq('email', backendUser.email)
+          .maybeSingle();
+
+        if (selErr) {
+          console.warn("Lookup by email failed:", selErr);
+          return;
+        }
+        if (found?.id) {
+          const { data: upd, error: updErr } = await supabase
+            .from('employee')
+            .update({ supabase_user_id: supaUserId })
+            .eq('id', found.id);
+
+          if (updErr) {
+            console.warn("Update after lookup by email failed:", updErr);
+          } else {
+            console.log("Linked supabase_user_id to employee by email:", upd);
+          }
+        }
+      }
+    } catch (e) {
+      console.error("Unexpected error while linking supabase id to employee:", e);
+    }
   };
 
   const handleSubmit = async (e) => {
@@ -34,20 +88,60 @@ const LoginPage = () => {
     }
 
     try {
+      // 1) Call your backend login endpoint
       const response = await api.post('/login', formData);
-      const { user } = response.data;
+      // const { user } = response.data;
 
-      if (!user) {
-        toast.error("Login failed", {
-          description: "Invalid response from server"
-        });
+      // if (!user) {
+      //   toast.error("Login failed", { description: "Invalid response from server" });
+      //   setLoading(false);
+      //   return;
+      // }
+
+      console.log('Login response:', response?.data);
+
+    // tolerate a few backend shapes:
+    // - response.data.user
+    // - response.data?.data?.user
+    // - response.data (if it directly returns user)
+      let user =
+        response?.data?.user ??
+        response?.data?.data?.user ??
+        response?.data?.user ??
+        response?.data;
+
+      if (!user || (!user.id && !user.email)) {
+        // helpful error + logging for debugging
+        console.error('Unexpected login response shape', response.data);
+        toast.error('Login failed — unexpected server response. Check backend.');
+        setLoading(false);
         return;
       }
 
+      // Save backend user object locally
       localStorage.setItem("fosys_user", JSON.stringify(user));
-      toast.success(`Welcome back, ${user.name}!`);
+      toast.success(`Welcome back, ${user.name || user.email}!`);
 
-      const role = user.role?.toLowerCase() || "intern";
+
+      // 2) Try to get the supabase auth user id if available on client (logged in via Supabase)
+      // It's possible the user logged in via backend (session) but not via supabase client; we attempt to fetch
+      try {
+        const { data: authData } = await supabase.auth.getUser();
+        const supaUserId = authData?.user?.id;
+        if (supaUserId) {
+          // If backend user doesn't have supabase_user_id, try linking on client
+          if (!user.supabase_user_id) {
+            await tryLinkSupabaseIdToEmployee(user, supaUserId);
+          }
+        } else {
+          console.log("No supabase auth user available on client after backend login.");
+        }
+      } catch (e) {
+        console.warn("supabase.auth.getUser() failed (ignored):", e);
+      }
+
+      // route based on role
+      const role = (user.role || 'INTERN').toLowerCase();
       navigate(`/dashboard/${role}`);
 
     } catch (error) {
@@ -134,15 +228,12 @@ const LoginPage = () => {
 
             {/* ---------- PREMIUM CREATE ACCOUNT SECTION ---------- */}
             <div className="mt-8 text-center space-y-4 animate-fadeIn">
-
-              {/* Divider */}
               <div className="flex items-center justify-center gap-3">
                 <span className="h-px w-20 bg-slate-700"></span>
                 <span className="text-slate-400 text-sm">New to FOSYS?</span>
                 <span className="h-px w-20 bg-slate-700"></span>
               </div>
 
-              {/* Create Account Button */}
               <button
                 type="button"
                 onClick={() => navigate("/signup")}
@@ -152,7 +243,6 @@ const LoginPage = () => {
                 Create a new account
               </button>
 
-              {/* Additional note */}
               <p className="text-slate-500 text-xs">
                 Access roles: Intern · Employee · Manager · Admin
               </p>
@@ -203,3 +293,4 @@ const LoginPage = () => {
 };
 
 export default LoginPage;
+

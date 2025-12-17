@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Eye, EyeOff, Mail, Lock, User } from "lucide-react";
+import { Eye, EyeOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -22,28 +22,36 @@ const SignupPage = () => {
   const [errors, setErrors] = useState({});
   const [loading, setLoading] = useState(false);
 
+  // -------------------------------
+  // INPUT HANDLER
+  // -------------------------------
   const handleChange = (e) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
     setErrors({ ...errors, [e.target.name]: "" });
   };
 
+  // -------------------------------
+  // SIGNUP HANDLER
+  // -------------------------------
   const handleSignup = async (e) => {
     e.preventDefault();
     setLoading(true);
 
-    if (!formData.name || !formData.email || !formData.password) {
-      setErrors({
-        name: !formData.name ? "Name is required" : "",
-        email: !formData.email ? "Email is required" : "",
-        password: !formData.password ? "Password is required" : "",
-      });
+    // Basic Validation
+    let newErrors = {};
+    if (!formData.name) newErrors.name = "Name is required";
+    if (!formData.email) newErrors.email = "Email is required";
+    if (!formData.password) newErrors.password = "Password is required";
+
+    if (Object.keys(newErrors).length > 0) {
+      setErrors(newErrors);
       setLoading(false);
       return;
     }
 
     try {
-      // 1️⃣ Create user in Supabase Auth
-      const { data: supaUser, error: supaError } = await supabase.auth.signUp({
+      //1️⃣ SUPABASE AUTH SIGNUP
+      const { data: supaData, error: supaError } = await supabase.auth.signUp({
         email: formData.email,
         password: formData.password,
       });
@@ -54,23 +62,40 @@ const SignupPage = () => {
         return;
       }
 
-      // 2️⃣ Create user in your backend Employee table
-      const response = await api.post("/signup", formData);
-      const createdUser = response.data?.user;
+      const supabaseUserId = supaData.user?.id;
 
-      if (!createdUser) {
-        toast.error("Failed to save user in backend");
+      if (!supabaseUserId) {
+        toast.error("Could not retrieve Supabase Auth User ID.");
         setLoading(false);
         return;
       }
 
-      toast.success("Signup successful!");
+      // 2️⃣ SEND TO BACKEND — INCLUDE supabase_user_id
+      const payload = {
+        name: formData.name,
+        email: formData.email,
+        password: formData.password,
+        role: formData.role,
+        supabase_user_id: supabaseUserId, // NEW FIELD SENT TO BACKEND
+      };
+
+      const response = await api.post("/signup", payload);
+      const createdUser = response.data?.user;
+
+      if (!createdUser) {
+        toast.error("Failed to store user in backend");
+        setLoading(false);
+        return;
+      }
+
+      toast.success("Signup successful! Please log in.");
       navigate("/login");
 
     } catch (err) {
       console.error("Signup error:", err);
+
       toast.error("Signup failed", {
-        description: err.response?.data?.error || "Unexpected error",
+        description: err.response?.data?.error || "Unexpected server error",
       });
     }
 
@@ -80,14 +105,18 @@ const SignupPage = () => {
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-950 to-slate-900 flex items-center justify-center px-6">
       <div className="w-full max-w-md">
+
+        {/* Heading */}
         <div className="text-center mb-8">
           <h1 className="text-3xl font-bold text-white">Create Account</h1>
           <p className="text-slate-400">Join your workspace</p>
         </div>
 
+        {/* Card */}
         <div className="bg-slate-800/50 p-8 rounded-xl border border-slate-700">
           <form onSubmit={handleSignup} className="space-y-6">
 
+            {/* Name */}
             <div className="space-y-2">
               <Label>Name</Label>
               <Input
@@ -99,6 +128,7 @@ const SignupPage = () => {
               {errors.name && <p className="text-red-500 text-sm">{errors.name}</p>}
             </div>
 
+            {/* Email */}
             <div className="space-y-2">
               <Label>Email</Label>
               <Input
@@ -111,16 +141,18 @@ const SignupPage = () => {
               {errors.email && <p className="text-red-500 text-sm">{errors.email}</p>}
             </div>
 
+            {/* Password */}
             <div className="space-y-2">
               <Label>Password</Label>
               <div className="relative">
                 <Input
                   name="password"
                   type={showPassword ? "text" : "password"}
-                  onChange={handleChange}
                   placeholder="Enter password"
+                  onChange={handleChange}
                   className="bg-slate-900/50 text-white pr-10"
                 />
+
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
@@ -129,17 +161,20 @@ const SignupPage = () => {
                   {showPassword ? <EyeOff /> : <Eye />}
                 </button>
               </div>
+
               {errors.password && (
                 <p className="text-red-500 text-sm">{errors.password}</p>
               )}
             </div>
 
+            {/* Role */}
             <div className="space-y-2">
               <Label>Role</Label>
               <select
                 name="role"
-                className="w-full bg-slate-900/50 border border-slate-600 text-white rounded p-2"
                 onChange={handleChange}
+                value={formData.role}
+                className="w-full bg-slate-900/50 border border-slate-600 text-white rounded p-2"
               >
                 <option value="INTERN">Intern</option>
                 <option value="EMPLOYEE">Employee</option>
@@ -148,6 +183,7 @@ const SignupPage = () => {
               </select>
             </div>
 
+            {/* Button */}
             <Button
               type="submit"
               disabled={loading}
@@ -155,8 +191,10 @@ const SignupPage = () => {
             >
               {loading ? "Creating Account..." : "Sign Up"}
             </Button>
+
           </form>
 
+          {/* Footer */}
           <div className="mt-4 text-center">
             <p className="text-slate-400 text-sm">
               Already have an account?{" "}
@@ -168,6 +206,7 @@ const SignupPage = () => {
               </button>
             </p>
           </div>
+
         </div>
       </div>
     </div>

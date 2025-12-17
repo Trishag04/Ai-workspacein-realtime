@@ -4,6 +4,7 @@ import { Github, AlertCircle, CheckCircle, Clock, XCircle, Search } from 'lucide
 import { Button } from '@/components/ui/button';
 import { MOCK_PRS } from '@/utils/mockData';
 import { getStatusColor, formatDate, formatTime } from '@/utils/constants';
+import { openPrefilledPR } from '@/utils/openPrefilledPR';
 
 // Local screenshot / avatar that was uploaded by the user and available in the environment
 const DEFAULT_AVATAR = '/mnt/data/bdeced23-4866-4c9f-a2ce-803dee880390.png';
@@ -14,6 +15,16 @@ export default function EmployeePRs({ user, prs = MOCK_PRS }) {
   const [sortBy, setSortBy] = useState('updated_desc');
   const [page, setPage] = useState(1);
   const PAGE_SIZE = 6;
+
+  // NEW: fields for Raise PR UI (header)
+  const [repoOwner, setRepoOwner] = useState('');
+  const [repoName, setRepoName] = useState('');
+  const [headBranch, setHeadBranch] = useState('');
+  const [manualTaskId, setManualTaskId] = useState('');
+
+  // Determine current user (fallback to localStorage)
+  const storedUser = typeof window !== 'undefined' ? JSON.parse(localStorage.getItem('fosys_user') || 'null') : null;
+  const currentUser = storedUser || user || null;
 
   // Derived data: filtering, searching, sorting
   const filtered = useMemo(() => {
@@ -64,10 +75,29 @@ export default function EmployeePRs({ user, prs = MOCK_PRS }) {
     exit: { opacity: 0, y: -6 },
   };
 
+  // handler for raise PR button in header
+  const handleRaisePR = () => {
+    if (!headBranch || !headBranch.trim()) {
+      alert('Please enter head branch (required).');
+      return;
+    }
+
+    // choose taskId only if provided
+    const taskId = manualTaskId && manualTaskId.trim() ? manualTaskId.trim() : null;
+
+    openPrefilledPR({
+      repoOwner: repoOwner.trim(),
+      repoName: repoName.trim(),
+      headBranch: headBranch.trim(),
+      taskId,
+      githubLogin: currentUser?.github_login || currentUser?.githubLogin || currentUser?.name || ''
+    });
+  };
+
   return (
     <div className="p-6 lg:p-10 bg-white rounded-lg shadow-sm min-h-[520px]">
       {/* Top header */}
-      <div className="flex items-center justify-between gap-4 mb-6">
+      <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4 mb-6">
         <div className="flex items-center gap-4">
           <div>
             <h1 className="text-2xl lg:text-3xl font-semibold text-slate-800">Pull Requests</h1>
@@ -80,19 +110,44 @@ export default function EmployeePRs({ user, prs = MOCK_PRS }) {
           </div>
         </div>
 
-        <div className="flex items-center gap-3">
-          <Button
-            onClick={() => window.open('https://github.com', '_blank')}
-            className="flex items-center gap-2 bg-slate-800 hover:bg-slate-900 text-white"
-          >
-            <Github className="w-4 h-4" />
-            Open GitHub
+        {/* NEW: Raise PR controls (compact) */}
+        <div className="w-full lg:w-auto flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+          <input
+            value={repoOwner}
+            onChange={(e) => setRepoOwner(e.target.value)}
+            placeholder="repo owner"
+            className="px-3 py-2 border border-slate-200 rounded-md w-36 text-sm"
+            aria-label="Repo owner"
+          />
+          <input
+            value={repoName}
+            onChange={(e) => setRepoName(e.target.value)}
+            placeholder="repo name"
+            className="px-3 py-2 border border-slate-200 rounded-md w-36 text-sm"
+            aria-label="Repo name"
+          />
+          <input
+            value={headBranch}
+            onChange={(e) => setHeadBranch(e.target.value)}
+            placeholder="head branch (e.g. feature/xyz)"
+            className="px-3 py-2 border border-slate-200 rounded-md w-44 text-sm"
+            aria-label="Head branch"
+          />
+          <input
+            value={manualTaskId}
+            onChange={(e) => setManualTaskId(e.target.value)}
+            placeholder="Task ID (optional)"
+            className="px-3 py-2 border border-slate-200 rounded-md w-28 text-sm"
+            aria-label="Task ID"
+          />
+          <Button onClick={handleRaisePR} className="flex items-center gap-2 bg-slate-800 hover:bg-slate-900 text-white">
+            <Github className="w-4 h-4" /> Raise PR
           </Button>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 ml-2">
             <img
-              src={user?.avatar || DEFAULT_AVATAR}
-              alt={user?.name || 'user avatar'}
+              src={currentUser?.avatar || DEFAULT_AVATAR}
+              alt={currentUser?.name || 'user avatar'}
               className="w-9 h-9 rounded-md object-cover border"
             />
           </div>

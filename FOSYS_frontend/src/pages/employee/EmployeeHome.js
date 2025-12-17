@@ -4,10 +4,24 @@ import { Button } from '@/components/ui/button';
 import { MOCK_TASKS, MOCK_PRS } from '@/utils/mockData';
 import { getStatusColor } from '@/utils/constants';
 import AddTaskModal from '@/components/workspace/AddTaskModal';
+import { openPrefilledPR } from '@/utils/openPrefilledPR';
 
 const EmployeeHome = ({ user }) => {
   const [showAddTask, setShowAddTask] = useState(false);
   const [meetingSummaries, setMeetingSummaries] = useState([]);
+
+  // get logged in user (fallback to prop 'user' if passed)
+  const storedUser = JSON.parse(localStorage.getItem("fosys_user") || "null");
+  const currentUser = storedUser || user || null;
+
+  // head branch for Raise PR
+  const [headBranch, setHeadBranch] = useState("");
+  // optional fallback repo fields (use when task doesn't have repo info)
+  const [repoOwner, setRepoOwner] = useState("");
+  const [repoName, setRepoName] = useState("");
+  // optional manual task id (controlled)
+  const [manualTaskId, setManualTaskId] = useState("");
+
   const currentDate = new Date().toLocaleDateString('en-US', {
     weekday: 'long',
     year: 'numeric',
@@ -38,6 +52,38 @@ const EmployeeHome = ({ user }) => {
 
     fetchSummaries();
   }, []);
+
+  // helper to open prefilled PR
+  const handleRaisePR = () => {
+    const trimmedBranch = (headBranch || "").trim();
+    const trimmedOwner = (repoOwner || "").trim();
+    const trimmedRepo = (repoName || "").trim();
+    const trimmedTask = (manualTaskId || "").trim();
+
+    if (!trimmedBranch) {
+      alert("Please enter the head branch (required).");
+      return;
+    }
+
+    // If repo info missing, ask user to confirm (we could also block)
+    if (!trimmedOwner || !trimmedRepo) {
+      const ok = window.confirm(
+        "Repository owner/name are empty — the PR page will not open correctly without them. Continue?"
+      );
+      if (!ok) return;
+    }
+
+    // prefer manualTaskId if provided; otherwise fallback to first available task (optional)
+    const chosenTaskId = trimmedTask || todayTasks[0]?.id || null;
+
+    openPrefilledPR({
+      repoOwner: trimmedOwner,
+      repoName: trimmedRepo,
+      taskId: chosenTaskId,
+      headBranch: trimmedBranch,
+      githubLogin: currentUser?.github_login || currentUser?.githubLogin || currentUser?.name || ""
+    });
+  };
 
   return (
     <div className="p-8" data-testid="employee-home-page">
@@ -108,11 +154,53 @@ const EmployeeHome = ({ user }) => {
               <Plus className="w-5 h-5" />
               Add Task
             </Button>
+
+            {/* Repo owner/name fallback */}
+            <div className="grid grid-cols-2 gap-2">
+              <input
+                value={repoOwner}
+                onChange={(e) => setRepoOwner(e.target.value)}
+                placeholder="repo owner (e.g., org-or-user)"
+                className="w-full bg-slate-900/40 p-2 rounded text-white"
+              />
+              <input
+                value={repoName}
+                onChange={(e) => setRepoName(e.target.value)}
+                placeholder="repo name (e.g., repo)"
+                className="w-full bg-slate-900/40 p-2 rounded text-white"
+              />
+            </div>
+
+            {/* Head branch input */}
+            <div className="space-y-2">
+              <label className="text-slate-400 text-sm">Head branch</label>
+              <input
+                value={headBranch}
+                onChange={(e) => setHeadBranch(e.target.value)}
+                placeholder="feature/my-branch"
+                className="w-full bg-slate-900/40 p-2 rounded text-white"
+              />
+            </div>
+
+            {/* Optional manual Task ID (for when tasks exist later) */}
+            <div>
+              <input
+                value={manualTaskId}
+                onChange={(e) => setManualTaskId(e.target.value)}
+                placeholder="Task ID (optional) — paste here if you have it"
+                className="w-full bg-slate-900/40 p-2 rounded text-white"
+              />
+              <p className="text-xs text-slate-400 mt-1">
+                Optional: include a Task ID so the webhook can link this PR to your task automatically.
+              </p>
+            </div>
+
+            {/* Raise PR */}
             <Button
-              onClick={() => window.open('https://github.com', '_blank')}
+              onClick={handleRaisePR}
               data-testid="quick-action-raise-pr-btn"
               variant="outline"
-              className="w-full border-slate-600 text-slate-300 hover:bg-slate-800 justify-start gap-2"
+              className="w-full border-slate-600 text-slate-300 hover:bg-slate-800 justify-start gap-2 mt-2"
             >
               <Github className="w-5 h-5" />
               Raise PR

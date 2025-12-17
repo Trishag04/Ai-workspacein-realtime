@@ -23,6 +23,7 @@ import { getStatusColor, formatDate } from "@/utils/constants";
 import { supabase } from "@/utils/supabaseClient";
 import api from "@/utils/api";
 import { toast } from "sonner";
+import { openPrefilledPR } from "@/utils/openPrefilledPR";
 
 /**
  * InternHome — updated and Supabase-connected
@@ -74,6 +75,18 @@ const InternHome = ({ user }) => {
   // Small UX flags
   const [copying, setCopying] = useState(false);
   const [creatingTaskId, setCreatingTaskId] = useState(null);
+
+  // ---------------------------
+  // NEW: Raise PR UI state
+  // ---------------------------
+  const [repoOwner, setRepoOwner] = useState("");
+  const [repoName, setRepoName] = useState("");
+  const [headBranch, setHeadBranch] = useState("");
+  const [manualTaskId, setManualTaskId] = useState("");
+
+  // determine current user (fallback to localStorage)
+  const storedUser = typeof window !== "undefined" ? JSON.parse(localStorage.getItem("fosys_user") || "null") : null;
+  const currentUser = storedUser || user || null;
 
   const currentDate = new Date().toLocaleDateString("en-US", {
     weekday: "long",
@@ -356,6 +369,26 @@ const InternHome = ({ user }) => {
   };
 
   // --------------------------
+  // Handler for Raise PR (NEW)
+  // --------------------------
+  const handleRaisePR = () => {
+    if (!headBranch || !headBranch.trim()) {
+      alert("Please enter head branch (required).");
+      return;
+    }
+
+    const taskId = manualTaskId && manualTaskId.trim() ? manualTaskId.trim() : null;
+
+    openPrefilledPR({
+      repoOwner: repoOwner.trim(),
+      repoName: repoName.trim(),
+      headBranch: headBranch.trim(),
+      taskId,
+      githubLogin: currentUser?.github_login || currentUser?.githubLogin || currentUser?.name || ""
+    });
+  };
+
+  // --------------------------
   // UI render components
   // --------------------------
   const MeetingCard = ({ meeting }) => {
@@ -524,9 +557,41 @@ const InternHome = ({ user }) => {
             <Plus className="w-5 h-5 mr-2" /> Add Task
           </Button>
 
-          <Button onClick={() => window.open("https://github.com", "_blank")} variant="outline" className="border-slate-700 text-slate-300 hover:bg-slate-800/50 py-4">
-            <Github className="w-5 h-5 mr-2 text-white" /> GitHub
-          </Button>
+          {/* ----------------- NEW: Compact Raise PR UI next to GitHub button ----------------- */}
+          <div className="flex items-center gap-2">
+            <input
+              value={repoOwner}
+              onChange={(e) => setRepoOwner(e.target.value)}
+              placeholder="repo owner"
+              className="px-3 py-2 border border-slate-700 rounded-md w-28 text-sm bg-slate-900/50 text-white"
+            />
+            <input
+              value={repoName}
+              onChange={(e) => setRepoName(e.target.value)}
+              placeholder="repo name"
+              className="px-3 py-2 border border-slate-700 rounded-md w-28 text-sm bg-slate-900/50 text-white"
+            />
+            <input
+              value={headBranch}
+              onChange={(e) => setHeadBranch(e.target.value)}
+              placeholder="head branch"
+              className="px-3 py-2 border border-slate-700 rounded-md w-32 text-sm bg-slate-900/50 text-white"
+            />
+            <input
+              value={manualTaskId}
+              onChange={(e) => setManualTaskId(e.target.value)}
+              placeholder="Task ID (opt.)"
+              className="px-3 py-2 border border-slate-700 rounded-md w-28 text-sm bg-slate-900/50 text-white"
+            />
+
+            <Button onClick={handleRaisePR} variant="outline" className="border-slate-700 text-slate-300 py-4">
+              <Github className="w-5 h-5 mr-2 text-white" /> Raise PR
+            </Button>
+
+            <Button onClick={() => window.open("https://github.com", "_blank")} variant="outline" className="border-slate-700 text-slate-300 hover:bg-slate-800/50 py-4">
+              <Github className="w-5 h-5 mr-2 text-white" /> GitHub
+            </Button>
+          </div>
         </div>
       </div>
 

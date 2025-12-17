@@ -33,7 +33,7 @@ const signToken = id => {
 app.post("/signup", async (req, res) => {
     try {
         // We only extract what we need. We IGNORE the 'role' field from the body.
-        const { name, email, password } = req.body; 
+        const { name, email, password, githubLogin } = req.body; 
 
         if (!password) {
              return res.status(400).json({ error: "Password is required." });
@@ -49,7 +49,8 @@ app.post("/signup", async (req, res) => {
                 name, 
                 email, 
                 password: hashedPassword, 
-                role: defaultRole // <-- HARDCODED LOW-LEVEL ROLE
+                role: defaultRole, // <-- HARDCODED LOW-LEVEL ROLE
+                github_login: githubLogin || null
             },
         });
 
